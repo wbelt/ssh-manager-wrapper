@@ -23,13 +23,13 @@ import (
 // Keys are case-insensitive; dashes/underscores are normalized by Viper.
 
 type HostConfig struct {
-	Host         string `mapstructure:"host"`
-	User         string `mapstructure:"user"`
-	Port         int    `mapstructure:"port"`
+	Host     string `mapstructure:"host"`
+	User     string `mapstructure:"user"`
+	Port     int    `mapstructure:"port"`
 	Identity string `mapstructure:"identity"`
 }
 
-const Version = "1.0.1" // Increment as needed
+const Version = "1.0.2" // Increment as needed
 
 func main() {
 	fmt.Println("gssh wrapper -- version", Version)
@@ -54,11 +54,19 @@ func main() {
 	pflag.StringVar(&flagUser, "user", "", "SSH user (overrides config)")
 	pflag.IntVar(&flagPort, "port", 22, "SSH port (overrides config)")
 	pflag.StringVarP(&flagIdentity, "identity", "i", "", "Path to private key file (overrides config)")
-	pflag.BoolVar(&flagList, "list", false, "List available targets from --config-dir and exit")
+	pflag.BoolVar(&flagList, "list", false, "List available targets from --config and exit")
 	pflag.BoolVar(&flagDryRun, "dry-run", false, "Print the ssh command that would be executed and exit")
 	pflag.BoolVarP(&flagVerbose, "verbose", "v", false, "Enable verbose logging")
 
 	pflag.Parse()
+
+	// If --target is not set, use first positional arg as target if present and not a flag
+	args := pflag.Args()
+	if flagTarget == "" && len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+		flagTarget = args[0]
+		// Remove the target from remoteCmd
+		args = args[1:]
+	}
 
 	// Bind flags and env.
 	must(v.BindPFlags(pflag.CommandLine))
@@ -110,9 +118,9 @@ func main() {
 
 	// At this point precedence is: flags > env > config > defaults.
 	cfg := HostConfig{
-		Host:         v.GetString("host"),
-		User:         v.GetString("user"),
-		Port:         v.GetInt("port"),
+		Host:     v.GetString("host"),
+		User:     v.GetString("user"),
+		Port:     v.GetInt("port"),
 		Identity: v.GetString("identity"),
 	}
 
@@ -130,7 +138,7 @@ func main() {
 	}
 
 	// Remaining args after flags are treated as the remote command.
-	remoteCmd := pflag.Args()
+	remoteCmd := args
 
 	// Build ssh arguments
 	sshArgs := buildSSHArgs(cfg, remoteCmd)
@@ -235,9 +243,18 @@ func warn(verbose bool, format string, args ...any) {
 	}
 }
 
+//	func fatal(format string, args ...any) {
+//		fmt.Fprintf(os.Stderr, "error: "+format+"\n", args...)
+//		os.Exit(1)
+//	}
+//
+// Patch os.Exit for testing fatal/must
+var osExit = os.Exit
+
+// To use osExit in fatal, update fatal as follows:
 func fatal(format string, args ...any) {
 	fmt.Fprintf(os.Stderr, "error: "+format+"\n", args...)
-	os.Exit(1)
+	osExit(1)
 }
 
 func must(err error) {
